@@ -1,0 +1,21 @@
+@article{ramdas2016fast,
+  title={Fast and flexible admm algorithms for trend filtering},
+  author={Ramdas, Aaditya and Tibshirani, Ryan J},
+  journal={Journal of Computational and Graphical Statistics},
+  volume={25},
+  number={3},
+  pages={839--858},
+  year={2016},
+  publisher={Taylor \& Francis}
+}
+
+@article{johnson2013dynamic,
+  title={A dynamic programming algorithm for the fused lasso and l 0-segmentation},
+  author={Johnson, Nicholas A},
+  journal={Journal of Computational and Graphical Statistics},
+  volume={22},
+  number={2},
+  pages={246--260},
+  year={2013},
+  publisher={Taylor \& Francis}
+}

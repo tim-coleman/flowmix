@@ -1,0 +1,169 @@
+---
+title: "Efficient Fused Lasso"
+output: html_document
+bibliography: FL.bib
+---
+
+```{r setup, include=FALSE, message = F}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+library(genlasso)
+```
+
+### Fused LASSO Motivation
+
+We are following the implementation of trend filtering from @ramdas2016fast which recommends splitting the ADMM task into a least squares step and a fused LASSO step, with the motivation being that a very fast algorithm for the fused LASSO was developed in @johnson2013dynamic. Additionally, they demonstrate that there are statistical reasons to use the fused LASSO.
+
+
+### Source Code
+
+To implement this, we use a `C++` implementation of the dynamic programming algorithm written for CMU's convex optimization class. The `C++` code and the loading routine are both directly imported from [this FTP](https://www.stat.cmu.edu/~ryantibs/convexopt-F13/homeworks/). 
+
+```{r}
+setwd("C:/Users/drain/Box Sync/USC_Stuff/Featureless_Flowmix/fused_lasso_C")
+dyn.load("tf_dp_ryan_orig.dll")
+
+prox = function(z, lam) {
+  if (!is.loaded("prox_dp_R")) {
+    dyn.load("prox_R.so")
+  }
+  
+  o = .C("prox_dp_R",
+         n=as.integer(length(z)),
+         z=as.double(z),
+         lam=as.double(lam),
+         beta=as.double(numeric(length(z))),
+         dup=FALSE)
+  
+  return(o$beta)
+}
+
+
+```
+
+Note that the `prox` routine does actually work in practice, producing a fit identical to that from `genlasso`:
+
+```{r, fig.align='center'}
+set.seed(0)
+n <- 500
+z <- sin(seq(-1,1, length.out = n)*2*pi) + rnorm(n,sd = 0.5)
+lam <- 0.5
+
+
+
+
+# comparing against a fused lasso from genlasso
+out_gl <- fusedlasso1d(y = z, minlam = 0.5)
+out_gl_lam <- out_gl$lambda[which.min(abs(lam - out_gl$lambda))]
+out_gl_fit <- out_gl$fit[,which.min(abs(lam-out_gl$lambda))]
+
+
+out <- prox(z, lam)
+plot(z, main = paste("Lambda = ", lam))
+lines(out, col = 'blue', lwd = 5)
+lines(out_gl_fit, col = 'red', lwd = 1)
+```
+Increasing the penalty (predictably) smoothes the fit:
+```{r}
+lam <- 8*lam
+
+out_gl <- fusedlasso1d(y = z, minlam = 0.5)
+out_gl_lam <- out_gl$lambda[which.min(abs(lam - out_gl$lambda))]
+out_gl_fit <- out_gl$fit[,which.min(abs(lam-out_gl$lambda))]
+
+out <- prox(z, lam)
+plot(z, main = paste("Lambda = ", lam))
+lines(out, col = 'blue', lwd = 5)
+lines(out_gl_fit, col = 'red', lwd = 1)
+```
+
+### Performance
+
+Now, using the `microbenchmark` function to evaluate performance by repeating this procedure 1000 times:
+
+```{r, warning = F}
+library(microbenchmark)
+
+run_prox <- function(n = 1e3){
+  z <- rnorm(n)
+  lam <- 0.5
+  out <- lapply(1:1000, FUN = function(x) prox(z, lam))
+}
+
+microbenchmark(run_prox)
+```
+
+This seems quite fast to me (though I will admit I don't have much experience in benchmarking). 
+
+
+
+
+### Applying to our ADMM algorithm
+
+The ADMM procedure for trend filtering recommended by @ramdas2016fast does not involve performing the fused LASSO on the original data, but rather on a modified version. The problem we solve within each ADMM loop is actually
+\[
+\min_{w_j} \|\xi_j - w_j \|^2 + \frac{2\lambda}{\rho} \| D^{(1)}w_j \|_1
+\]
+
+where $\rho$ is an ADMM parameter, $w_j$ is an ADMM variable correpsonding to dimension $j$ of the cytogram, and $D^{(1)}$ is the first degree differencing matrix, and $\xi_j$ is an internal variable that is calculated at M step of the algorithm. Thus, a complete $w$ pass in the ADMM algorithm would look something like the function below:
+
+```{r, include=F}
+gen_diff_mat <- function(n, l){
+  get_D1 <- function(t) {do.call(rbind, lapply(1:(t-1), FUN = function(x){
+    v <- rep(0, t)
+    v[x] <- 1
+    v[x+1] <- -1
+    v
+  }))}
+  if(l == 1){
+    return(get_D1(n))
+  }
+  if(l > 1){
+    D <- get_D1(n)
+    for(k in 1:(l-1)){
+      D <- get_D1(n-k) %*% D
+    }
+    return(D)
+  }
+}
+
+```
+
+
+```{r}
+w_update_fused <- function(l, mu, uw, rho, lambda){
+  
+  TT <- length(mu)
+  D <- gen_diff_mat(n = TT, l = l)
+  
+  # modified lambda for fused lasso routine
+  mod_lam <- lambda*2/rho
+
+  # generating pseudo response xi
+  xi <- D %*% mu + 1/rho * uw
+  
+  # running the fused LASSO
+  fit <- prox(z = xi, lam = mod_lam)
+
+  return(fit)
+}
+
+```
+
+A quick (but somewhat nonsensical example):
+
+```{r}
+set.seed(100)
+l = 2 # degree of differencing
+lambda = 0.01 # penalty term
+rho = 0.22 # ADMM parameter
+mu <- rnorm(100, mean = 0, sd = 0.25) # current mean estimates along dimension j
+uw <- rnorm(100-l, mean = 0, sd = 0.05) # nonsensical ADMM variable estimates
+
+w_update_fused(l = l, mu = mu, uw = uw, rho = rho, lambda = lambda)
+```
+
+
+
+This is also quite fast (I hope!).
+
+### References
