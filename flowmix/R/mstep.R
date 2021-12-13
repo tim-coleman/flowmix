@@ -120,6 +120,29 @@ mtsqrt_inv <- function(a){
   a.sqrt <- a.eig$vectors %*% mat %*% t(a.eig$vectors)
 }
 
+
+
+#' Returns the simplified pi-estimates used in the trend filtering implementation of flowmix.
+#'
+#' @param resp List of responsibilities.
+#' @param countslist List of particle counts, e.g. biomasses. 
+#'
+#' @return A list of the same length as the inputted responsbilities.
+#' @export
+#'
+#' @examples
+mstep_pi <- function(resp, countslist = NULL){
+  if(is.null(countslist)){
+    lapply(resp, colMeans)
+  }
+  else{
+    TT <- length(resp)
+    lapply(1:TT, FUN = function(ii){
+      colSums(resp[[ii]])/sum(countslist[[ii]])
+    })
+  }
+}
+
 ##' Solves the M step of beta, using a particular lasso regression
 ##' formulation. This is a backup function, and the default beta M-step function
 ##' is \code{Mstep_beta_admm()}, which is much faster.
