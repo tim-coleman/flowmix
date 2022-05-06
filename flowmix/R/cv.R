@@ -268,6 +268,127 @@ one_job <- function(ialpha, ibeta, ifold, irep, folds, destin,
     warning(err)})
 }
 
+# trend filtering version
+one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
+                    lambdas, lambda_pis,
+                    ## For simulations
+                    sim = FALSE, isim = 1,
+                    seedtab = NULL,
+                    ## The rest that is needed explicitly for flowmix()
+                    ylist, countslist,
+                    X,
+                    ...){
+  
+  ## Get the train/test data
+  TT <- length(ylist)
+  test.inds = unlist(folds[ifold])
+  test.dat = ylist[test.inds]
+  test.count = countslist[test.inds]
+  train.inds = c(1, unlist(folds[-ifold]), TT)
+  train.dat = ylist[train.inds]
+  train.count = countslist[train.inds]
+
+  ## Check whether this job has been done already.
+  filename = make_cvscore_filename(iprob, imu, ifold, irep, sim, isim)
+  if(file.exists(file.path(destin, filename))){
+    cat(filename, "already done", fill=TRUE)
+    return(NULL)
+  }
+  
+  
+  ## Get the seed ready
+  if(!is.null(seedtab)){
+    seed = seedtab %>%
+      dplyr::filter(iprob == !!iprob,
+                    imu == !!imu,
+                    ifold == !!ifold,
+                    irep == !!irep) %>%
+      dplyr::select(seed1, seed2, seed3, seed4, seed5, seed6, seed7) %>% unlist() %>% as.integer()
+  } else {
+    seed = NULL
+  }
+  
+  
+  lambda_pi = lambda_pis[iprob]
+  lambda = lambdas[imu]
+  
+  ## Run the algorithm (all this trouble because of |nrep|)
+  args = list(...)
+  args$ylist = train.dat
+  args$countslist = train.count
+  args$x = train.X
+  args$lambda = lambda
+  args$lambda_pi = lambda_pi
+  args$seed = seed
+  if("nrep" %in% names(args)){
+    args = args[-which(names(args) %in% "nrep")] ## remove |nrep| prior to feeding to flowmix_once().
+  }
+  
+  tryCatch({
+    
+    ## New and better do.call() statement:
+    ## res.train = do.call(flowmix_once, args) ## Old
+    argn <- lapply(names(args), as.name)
+    names(argn) <- names(args)
+    call <- as.call(c(list(as.name("flowmix_tf_once")), argn))
+    res.train = eval(call, args)
+    
+    ## Assign mn and prob
+    pred = predict.flowmix(res.train, newx = test.X)
+    stopifnot(all(pred$prob >= 0))
+    
+    ## Evaluate on test data, by calculating objective (penalized likelihood with penalty parameters set to 0)
+    cvscore = tf_objective(mu = pred$mn,
+                           prob = pred$prob,
+                           sigma = pred$sigma,
+                           ylist = test.dat,
+                           countslist = test.count,
+                           Dl = diag(rep(1, TT)),
+                           lambda_pi = 0,
+                           lambda = 0,
+                           alpha = res.train$alpha,
+                           beta = res.train$beta)
+    
+    ## Store (temporarily) the run times
+    time_per_iter = res.train$time_per_iter
+    final_iter = res.train$final.iter
+    total_time = res.train$total_time
+    
+    ## Store the results.
+    beta = res.train$beta
+    alpha = res.train$alpha
+    objectives = res.train$objectives
+    
+    ## Save the CV results
+    save(cvscore,
+         ## Time
+         time_per_iter,
+         final_iter,
+         total_time,
+         ## Results
+         lambda,
+         lambda_pi,
+         lambdas,
+         lambda_pis,
+         beta,
+         alpha,
+         objectives,
+         ## Save the file
+         file = file.path(destin, filename))
+    return(NULL)
+    
+  }, error = function(err) {
+    err$message = paste(err$message,
+                        "\n(No file will be saved for lambdas (",
+                        signif(lambda_pis[iprob],3), ", ", signif(lambdas[imu],3),
+                        ") whose indices are: ",
+                        iprob, "-", imu, "-", ifold, "-", irep,
+                        " .)",sep="")
+    cat(err$message, fill=TRUE)
+    warning(err)})
+}
+
+
 
 ##' Refit model for one pair of regularization parameter values. Saves to
 ##' \code{nrep} files named like "1-4-3-fit.Rdata", for
