@@ -10,9 +10,9 @@ make_cv_folds <- function(ylist=NULL, nfold, blocksize = 20, TT=NULL){
   if(is.null(TT)) TT = length(ylist)
 
   ## ## Temporary
-  ## TT = 71
-  ## blocksize = 5
-  ## nfold=5
+  TT = 71
+  blocksize = 5
+  nfold=5
   ## ## End of temporary
 
   endpoints = round(seq(from = 0, to = TT + blocksize,
@@ -40,14 +40,48 @@ make_cv_folds <- function(ylist=NULL, nfold, blocksize = 20, TT=NULL){
   return(test.ii.list)
 }
 
+
+##' Define the time folds cross-validation.
+##'
+##' @param nfold Number of folds.
+##' @return List of fold indices.
+##' @export
+##'
+make_cv_tf_folds <- function(ylist=NULL, nfold, TT=NULL){
+  
+  ## Make hour-long index list
+  if(is.null(TT)) TT = length(ylist)
+  
+  ## ## Temporary
+  # TT = 71
+  # nfold=5
+  ## ## End of temporary
+  
+  folds <- rep(1:nfold, ceiling( (TT-2)/nfold))[1:(TT-2)]
+  
+  inds <- lapply(1:nfold, FUN = function(k) (2:(TT-1))[folds == k])
+
+  ## Further make these into five blocks of test indices.
+  test.ii.list = lapply(1:nfold, function(ifold){
+    which.test.inds = seq(from = ifold, to = length(inds), by = nfold)
+    test.ii = unlist(inds[which.test.inds])
+    return(test.ii)
+  })
+  
+  ## plot(NA, xlim = c(0,TT), ylim=1:2)
+  ## lapply(1:nfold, function(ifold){a = test.ii.list[[ifold]]; abline(v=a, col=ifold)})
+  
+  return(test.ii.list)
+}
+
+
 ##' Using subset of indices \code{subsample_inds}, do what \code{make_cv_folds}
 ##' does, but using original memberships from data of size \code{orig_TT}. The
 ##' new memberships are a subset of those original memberships.
 ##'
 ##' @param nfold Number of CV folds.
 ##' @param blocksize Size (number of time indices) of one block.
-##' @param orig_TT Original data size (for forming original memberships).
-##' @param subsample_inds Indices, out of \code{1:orig_TT}.
+##' @param orig_TT Original data size (for forming original membe        
 ##'
 ##' @export
 make_cv_folds_subsample_with_original_membership <- function(nfold, blocksize, orig_TT, subsample_inds){
@@ -67,7 +101,7 @@ make_cv_folds_subsample_with_original_membership <- function(nfold, blocksize, o
   orig_folds = make_cv_folds(TT = orig_TT,##dat$ylist,
                              nfold = nfold,
                              blocksize = blocksize)
-  membership = rep(NA, orig_TT)
+  membership = rep(NA, orig_TT)                                         
   for(ii in 1:nfold){   membership[orig_folds[[ii]]] = ii }
 
   ## Test indices in the subsamples
@@ -184,8 +218,8 @@ one_job <- function(ialpha, ibeta, ifold, irep, folds, destin,
     pred = predict.flowmix(res.train, newx = test.X)
     stopifnot(all(pred$prob >= 0))
 
-    ## Evaluate on test data, by calculating objective (penalized likelihood)
-    cvscore = objective(mu = pred$mn,
+    ## Evaluate on test data, by calculating objective (penalized likelihood with penalty parameters set to 0)
+    cvscore = tf_objective(mu = pred$mn,
                         prob = pred$prob,
                         sigma = pred$sigma,
                         ylist = test.dat,

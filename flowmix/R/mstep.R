@@ -123,13 +123,13 @@ mtsqrt_inv <- function(a){
 
 
 #' Returns the simplified pi-estimates used in the trend filtering implementation of flowmix.
-#'
+#' 
 #' @param resp List of responsibilities.
-#' @param countslist List of particle counts, e.g. biomasses. 
-#'
+#' @param countslist List of particle counts, e.g. biomasses.
+#' 
 #' @return A list of the same length as the inputted responsbilities.
 #' @export
-#'
+#' 
 #' @examples
 mstep_pi <- function(resp, countslist = NULL){
   if(is.null(countslist)){
