@@ -316,7 +316,7 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
   args = list(...)
   args$ylist = train.dat
   args$countslist = train.count
-  args$x = train.X
+  args$x = train.inds
   args$lambda = lambda
   args$lambda_pi = lambda_pi
   args$seed = seed
@@ -334,16 +334,19 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
     res.train = eval(call, args)
     
     ## Assign mn and prob
-    pred = predict.flowmix(res.train, newx = test.X)
+    pred = predict.flowmix.tf(res.train, newtimes = test.inds)
     stopifnot(all(pred$prob >= 0))
     
+    browser()
+    
+
     ## Evaluate on test data, by calculating objective (penalized likelihood with penalty parameters set to 0)
     cvscore = tf_objective(mu = pred$mn,
                            prob = pred$prob,
                            sigma = pred$sigma,
                            ylist = test.dat,
                            countslist = test.count,
-                           Dl = diag(rep(1, TT)),
+                           Dl = diag(rep(1, length(test.count))),
                            lambda_pi = 0,
                            lambda = 0,
                            alpha = res.train$alpha,
@@ -355,8 +358,8 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
     total_time = res.train$total_time
     
     ## Store the results.
-    beta = res.train$beta
-    alpha = res.train$alpha
+    mn = res.train$mn
+    prob = res.train$prob
     objectives = res.train$objectives
     
     ## Save the CV results
@@ -370,8 +373,8 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
          lambda_pi,
          lambdas,
          lambda_pis,
-         beta,
-         alpha,
+         mn,
+         prob,
          objectives,
          ## Save the file
          file = file.path(destin, filename))
