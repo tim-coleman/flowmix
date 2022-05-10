@@ -180,7 +180,7 @@ one_job <- function(ialpha, ibeta, ifold, irep, folds, destin,
   ## Get the seed ready
   if(!is.null(seedtab)){
     seed = seedtab %>%
-      dplyr::filter(ialpha == !!ialpha,
+      dplyr::filter(iprob == !!ialpha,
                     ibeta == !!ibeta,
                     ifold == !!ifold,
                     irep == !!irep) %>%
@@ -402,7 +402,7 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
 ##' @inheritParams one_job
 ##'
 ##' @export
-one_job_refit <- function(ialpha, ibeta, destin,
+one_job_refit_tf <- function(iprob, imu, destin,
                           mean_lambdas, prob_lambdas,
                           seedtab = NULL,
                           ## The rest that is needed explicitly for flowmix_once()
@@ -415,7 +415,7 @@ one_job_refit <- function(ialpha, ibeta, destin,
   for(irep in 1:nrep){
 
     ## Writing file
-    filename = make_refit_filename(ialpha, ibeta, irep, sim, isim)
+    filename = make_refit_filename(iprob, imu, irep, sim, isim)
     if(file.exists(file.path(destin, filename))){
       cat(filename, "already done", fill=TRUE)
       next
@@ -439,8 +439,8 @@ one_job_refit <- function(ialpha, ibeta, destin,
       args$ylist = ylist
       args$countslist = countslist
       args$X = X
-      args$prob_lambda = prob_lambdas[ialpha]
-      args$mean_lambda = mean_lambdas[ibeta]
+      args$prob_lambda = prob_lambdas[iprob]
+      args$mean_lambda = mean_lambdas[imu]
       args$seed = seed
       if("nrep" %in% names(args)) args = args[-which(names(args) %in% "nrep")] ## remove |nrep| prior to feeding
 
@@ -507,7 +507,7 @@ make_iimat_small <- function(cv_gridsize){
 
 
 ##' Create file name (a string) for cross-validation results.
-make_cvscore_filename <- function(ialpha, ibeta, ifold, irep,
+make_cvscore_filename <- function(iprob, imu, ifold, irep,
                                   ## If simulations, then additional file names
                                   sim = FALSE, isim = 1){
   filename = paste0(ialpha, "-", ibeta, "-", ifold, "-", irep, "-cvscore.Rdata")
@@ -518,7 +518,7 @@ make_cvscore_filename <- function(ialpha, ibeta, ifold, irep,
 
 ##' Create file name (a string) for re-estimated models for the lambda values
 ##' indexed by \code{ialpha} and \code{ibeta}.
-make_refit_filename <- function(ialpha, ibeta, irep,
+make_refit_filename <- function(iprob, imu, irep,
                                   ## If simulations, then additional file names
                                 sim = FALSE, isim = 1){
   filename = paste0(ialpha, "-", ibeta, "-", irep, "-fit.Rdata")
@@ -547,7 +547,7 @@ make_refit_filename <- function(ialpha, ibeta, irep,
 ##' @return No return.
 ##'
 ##' @export
-cv.flowmix <- function(
+cv.flowmix_tf <- function(
                        ## Data
                        ylist,
                        countslist,
@@ -616,21 +616,21 @@ cv.flowmix <- function(
     print_progress(ii, nrow(iimat), "Jobs (EM replicates) assigned on this computer", start.time = start.time)
 
     if(!refit){
-      ialpha = iimat[ii,"ialpha"]
-      ibeta = iimat[ii,"ibeta"]
+      ialpha = iimat[ii,"iprob"]
+      ibeta = iimat[ii,"imu"]
       ifold = iimat[ii,"ifold"]
       irep = iimat[ii,"irep"]
       ## if(verbose) cat('(ialpha, ibeta, ifold, irep)=', c(ialpha, ibeta, ifold, irep), fill=TRUE)
     } else {
-      ialpha = iimat[ii, "ialpha"]
-      ibeta = iimat[ii, "ibeta"]
+      ialpha = iimat[ii, "iprob"]
+      ibeta = iimat[ii, "imu"]
       ifold = 0
     }
 
     if(!refit){
       ## Add noise to X, if applicable
-      one_job(ialpha = ialpha,
-              ibeta = ibeta,
+      one_job_tf(iprob = iprob,
+              imu = imu,
               ifold = ifold,
               irep = irep,
               folds = folds,
@@ -646,8 +646,8 @@ cv.flowmix <- function(
               seedtab = seedtab,
               flatX_thresh = flatX_thresh)
     } else {
-      one_job_refit(ialpha = ialpha,
-                    ibeta = ibeta,
+      one_job_refit(iprob = iprob,
+                    imu = imu,
                     destin = destin,
                     mean_lambdas = mean_lambdas,
                     prob_lambdas = prob_lambdas,
