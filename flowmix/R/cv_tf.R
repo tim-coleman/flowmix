@@ -337,8 +337,7 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
     pred = predict.flowmix.tf(res.train, newtimes = test.inds)
     stopifnot(all(pred$prob >= 0))
     
-    browser()
-    
+
 
     ## Evaluate on test data, by calculating objective (penalized likelihood with penalty parameters set to 0)
     cvscore = tf_objective(mu = pred$mn,
@@ -403,8 +402,8 @@ one_job_tf <- function(iprob, imu, ifold, irep, folds, destin,
 ##'
 ##' @export
 one_job_refit_tf <- function(iprob, imu, destin,
-                          mean_lambdas, prob_lambdas,
-                          seedtab = NULL,
+                             lambdas, lambda_pis,                          
+                             seedtab = NULL,
                           ## The rest that is needed explicitly for flowmix_once()
                           ylist, countslist, X,
                           sim = FALSE, isim = 1,
@@ -415,7 +414,7 @@ one_job_refit_tf <- function(iprob, imu, destin,
   for(irep in 1:nrep){
 
     ## Writing file
-    filename = make_refit_filename(iprob, imu, irep, sim, isim)
+    filename = make_refit_filename(iprob = iprob, imu = imu, irep = irep, sim = sim, isim = isim)
     if(file.exists(file.path(destin, filename))){
       cat(filename, "already done", fill=TRUE)
       next
@@ -425,8 +424,8 @@ one_job_refit_tf <- function(iprob, imu, destin,
      if(!is.null(seedtab)){
        ifold = 0
        seed = seedtab %>%
-         dplyr::filter(ialpha == !!ialpha,
-                       ibeta == !!ibeta,
+         dplyr::filter(iprob == !!iprob,
+                       imu == !!imu,
                        ifold == !!ifold,
                        irep == !!irep) %>%
          dplyr::select(seed1, seed2, seed3, seed4, seed5, seed6, seed7) %>% unlist() %>% as.integer()
@@ -439,15 +438,15 @@ one_job_refit_tf <- function(iprob, imu, destin,
       args$ylist = ylist
       args$countslist = countslist
       args$X = X
-      args$prob_lambda = prob_lambdas[iprob]
-      args$mean_lambda = mean_lambdas[imu]
+      args$lambda_pi = lambda_pis[iprob]
+      args$lambda = lambdas[imu]
       args$seed = seed
       if("nrep" %in% names(args)) args = args[-which(names(args) %in% "nrep")] ## remove |nrep| prior to feeding
 
       ## Call the function.
       argn <- lapply(names(args), as.name)
       names(argn) <- names(args)
-      call <- as.call(c(list(as.name("flowmix_once")), argn))
+      call <- as.call(c(list(as.name("flowmix_tf_once")), argn))
       res = eval(call, args)
 
       ## Save the results
@@ -510,7 +509,7 @@ make_iimat_small <- function(cv_gridsize){
 make_cvscore_filename <- function(iprob, imu, ifold, irep,
                                   ## If simulations, then additional file names
                                   sim = FALSE, isim = 1){
-  filename = paste0(ialpha, "-", ibeta, "-", ifold, "-", irep, "-cvscore.Rdata")
+  filename = paste0(iprob, "-", imu, "-", ifold, "-", irep, "-cvscore.Rdata")
   if(sim){filename = paste0(isim, "-", filename)} ## Temporary
   return(filename)
 }
@@ -521,7 +520,7 @@ make_cvscore_filename <- function(iprob, imu, ifold, irep,
 make_refit_filename <- function(iprob, imu, irep,
                                   ## If simulations, then additional file names
                                 sim = FALSE, isim = 1){
-  filename = paste0(ialpha, "-", ibeta, "-", irep, "-fit.Rdata")
+  filename = paste0(iprob, "-", imu, "-", irep, "-fit.Rdata")
   if(sim){filename = paste0(isim, "-", filename)} ## Temporary
   return(filename)
 }
@@ -555,8 +554,8 @@ cv.flowmix_tf <- function(
                        ## Define the locations to save the CV.
                        destin = ".",
                        ## Regularization parameter values
-                       mean_lambdas,
-                       prob_lambdas,
+                       lambdas,
+                       lambda_pis,
                        iimat = NULL,
                        ## Other settings
                        maxdev,
@@ -574,8 +573,8 @@ cv.flowmix_tf <- function(
                        ...){
 
   ## Basic checks
-  stopifnot(length(prob_lambdas) == length(mean_lambdas))
-  cv_gridsize = length(mean_lambdas)
+  stopifnot(length(lambda_pis) == length(lambdas))
+  cv_gridsize = length(lambdas)
 
   ## There's an option to input one's own iimat matrix.
   if(is.null(iimat)){
@@ -587,7 +586,7 @@ cv.flowmix_tf <- function(
   ## Define the CV folds
   ## folds = make_cv_folds(ylist = ylist, nfold = nfold, blocksize = 1)
   if(is.null(folds)){
-    folds = make_cv_folds(ylist = ylist, nfold = nfold, blocksize = blocksize)
+    folds = make_cv_tf_folds(ylist = ylist, nfold = nfold)
   } else {
     stopifnot(length(folds) == nfold)
   }
@@ -599,8 +598,8 @@ cv.flowmix_tf <- function(
            nfold,
            nrep, ## Added recently
            cv_gridsize,
-           mean_lambdas,
-           prob_lambdas,
+           lambdas,
+           lambda_pis,
            ylist, countslist, X,
            ## bins, ## Not available anymore
            ## sparse_countslist, ## Not available anymore
@@ -616,14 +615,14 @@ cv.flowmix_tf <- function(
     print_progress(ii, nrow(iimat), "Jobs (EM replicates) assigned on this computer", start.time = start.time)
 
     if(!refit){
-      ialpha = iimat[ii,"iprob"]
-      ibeta = iimat[ii,"imu"]
+      iprob = iimat[ii,"iprob"]
+      imu = iimat[ii,"imu"]
       ifold = iimat[ii,"ifold"]
       irep = iimat[ii,"irep"]
       ## if(verbose) cat('(ialpha, ibeta, ifold, irep)=', c(ialpha, ibeta, ifold, irep), fill=TRUE)
     } else {
-      ialpha = iimat[ii, "iprob"]
-      ibeta = iimat[ii, "imu"]
+      iprob = iimat[ii, "iprob"]
+      imu = iimat[ii, "imu"]
       ifold = 0
     }
 
@@ -631,26 +630,29 @@ cv.flowmix_tf <- function(
       ## Add noise to X, if applicable
       one_job_tf(iprob = iprob,
               imu = imu,
+              l = l,
+              l_pi = l_pi,
               ifold = ifold,
               irep = irep,
               folds = folds,
               destin = destin,
-              mean_lambdas = mean_lambdas,
-              prob_lambdas = prob_lambdas,
+              lambdas = lambdas,
+              lambda_pis = lambda_pis,
               ## Arguments for flowmix()
               ylist = ylist, countslist = countslist, X = X,
               ## Additional arguments for covarem(), for ellipsis.
               numclust = numclust,
               maxdev = maxdev,
               verbose = FALSE,
-              seedtab = seedtab,
-              flatX_thresh = flatX_thresh)
+              seedtab = seedtab)
     } else {
-      one_job_refit(iprob = iprob,
+      one_job_refit_tf(iprob = iprob,
                     imu = imu,
+                    l = l,
+                    l_pi = l_pi,
                     destin = destin,
-                    mean_lambdas = mean_lambdas,
-                    prob_lambdas = prob_lambdas,
+                    lambdas = lambdas,
+                    lambda_pis = lambda_pis,
                     ## Arguments to flowmix()
                     ylist = ylist, countslist = countslist, X = X,
                     ## Additional arguments for covarem(), for ellipsis.
@@ -658,8 +660,7 @@ cv.flowmix_tf <- function(
                     maxdev = maxdev,
                     nrep = nrep,
                     verbose = FALSE,
-                    seedtab = seedtab,
-                    flatX_thresh = flatX_thresh
+                    seedtab = seedtab
                     )
     }
     return(NULL)
