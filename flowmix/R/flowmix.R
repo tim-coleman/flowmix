@@ -133,7 +133,7 @@ flowmix_once <- function(ylist, X,
     assertthat::assert_that(all((seed %>% sapply(., class)) == "integer"))
     assertthat::assert_that(length(seed) == 7)
   }
-  if(is.null(mn)) mn = init_mn(ylist, numclust, TT, dimdat, countslist, seed)
+  if(is.null(mn)) mn = init_mn(ylist, numclust, TT, dimdat, countslist)
   ntlist = sapply(ylist, nrow)
   N = sum(ntlist)
 
@@ -206,7 +206,8 @@ flowmix_once <- function(ylist, X,
                                local_adapt_niter = admm_local_adapt_niter)
   }
 
-    admm_niters[[iter]] = unlist(res.beta$admm_niters)
+   # admm_niters[[iter]] = unlist(res.beta$admm_niters)
+    admm_niters[[iter]] = unlist(res.beta$admm_inner_iters)
 
     ## Harvest means
     mn = res.beta$mns

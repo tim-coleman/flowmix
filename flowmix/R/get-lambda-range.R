@@ -39,9 +39,9 @@
 ##'                             )
 ##'
 ##' }
-calc_max_lambda <- function(ylist, countslist = NULL, X, numclust,
-                            max_mean_lambda = 4000,
-                            max_prob_lambda = 1000,
+calc_max_lambda_tf <- function(ylist, countslist = NULL, numclust,
+                            max_lambda = 4000,
+                            max_lambda_pi = 1000,
                             verbose = FALSE,
                             iimax = 16,
                             ...){
@@ -57,12 +57,11 @@ calc_max_lambda <- function(ylist, countslist = NULL, X, numclust,
         " and lambda_beta = ", max_mean_lambda * facs[ii], "being tested.  ", fill=TRUE)
     cat("###############################################################", fill=TRUE)
 
-    res = flowmix_once(ylist = ylist,
+    res = flowmix_tf_once(ylist = ylist,
                        countslist = countslist,
-                       X = X,
                        numclust = numclust,
-                       prob_lambda = max_prob_lambda * facs[ii],
-                       mean_lambda = max_mean_lambda * facs[ii],
+                       prob_lambda = max_lambda_pi * facs[ii],
+                       mean_lambda = max_lambda * facs[ii],
                        verbose = verbose,
                        zero_stabilize = TRUE,
                        ...)
@@ -80,13 +79,135 @@ calc_max_lambda <- function(ylist, countslist = NULL, X, numclust,
       ## If there are *any* nonzero values at the first iter, prompt a restart
       ## with higher initial lambda values.
       if(ii==1){
-        stop(paste0("Max lambdas: ", max_mean_lambda, " and ",
-                    max_prob_lambda,
+        stop(paste0("Max lambdas: ", max_lambda, " and ",
+                    max_lambda_pi,
                     " were too small as maximum reg. values. Go up and try again!!"))
 
       ## If there are *any* nonzero values, return the immediately preceding
       ## lambda values -- these were the smallest values we had found that gives
       ## full sparsity.
+      } else {
+        ## Check one more time whether the model was actually zero, by fully running it;
+        res = flowmix_tf_once(ylist = ylist,
+                           countslist = countslist,
+                           X = X,
+                           numclust = numclust,
+                           lambda_pi = max_lambda_pi * facs[ii],
+                           lambda = max_lambda * facs[ii],
+                           zero_stabilize = FALSE,
+                           ...)
+        toler = 0
+        sum_nonzero_alpha = sum(res$alpha[,-1] > toler)
+        sum_nonzero_beta = sum(unlist(lapply(res$beta, function(cf){ sum(cf[-1,] > toler) })))
+
+        ## If there are *any* nonzero values, do one of the following
+        if(sum_nonzero_alpha + sum_nonzero_beta != 0){
+          return(list(beta = max_lambda * facs[ii-1],
+                      alpha = max_lambda_pi *facs[ii-1]))
+        }
+        ## Otherwise, just proceed to the next iteration.
+      }
+    }
+    cat(fill=TRUE)
+  }
+}
+
+##' A wrapper for \code{calc_max_lambda}. Saves the two maximum lambda values in
+##' a file.
+##'
+##' @param destin Where to save the output (A two-lengthed list called
+##'   "maxres").
+##' @param maxres_file Filename for output. Defaults to maxres.Rdata.
+##' @param ... Additional arguments to \code{flowmix()}.
+##' @inheritParams calc_max_lambda
+##'
+##' @return No return
+##'
+##' @export
+get_max_lambda <- function(destin, maxres_file = "maxres.Rdata",
+                           ylist,
+                           countslist,
+                           X,
+                           numclust,
+                           maxdev,
+                           max_prob_lambda,
+                           max_mean_lambda,
+                           ...){
+
+  if(file.exists(file.path(destin, maxres_file))){
+    load(file.path(destin, maxres_file))
+    cat("Maximum regularization values are loaded.", fill=TRUE)
+    return(maxres)
+  } else {
+    print(Sys.time())
+    cat("Maximum regularization values being calculated.", fill = TRUE)
+    cat("with initial lambdas values (alpha and beta):", fill = TRUE)
+    print(c(max_prob_lambda, max_mean_lambda));
+    maxres = calc_max_lambda(ylist = ylist,
+                             countslist = countslist,
+                             X = X,
+                             numclust = numclust,
+                             maxdev = maxdev,
+                             ## This function's settings
+                             max_prob_lambda = max_prob_lambda,
+                             max_mean_lambda = max_mean_lambda,
+                             ...)
+    save(maxres, file = file.path(destin, maxres_file))
+    cat("file was written to ", file.path(destin, maxres_file), fill=TRUE)
+    cat("maximum regularization value calculation done.", fill = TRUE)
+    print(Sys.time())
+    return(maxres)
+  }
+}
+
+calc_max_lambda <- function(ylist, countslist = NULL, X, numclust,
+                            max_mean_lambda = 4000,
+                            max_prob_lambda = 1000,
+                            verbose = FALSE,
+                            iimax = 16,
+                            ...){
+  
+  ## Get range of regularization parameters.
+  facs = sapply(1:iimax, function(ii) 2^(-ii+1)) ## DECREASING order
+  print("running the models once")
+  for(ii in 1:iimax){
+    
+    ## print_progress(ii, iimax, "regularization values", fill = TRUE)
+    cat("###############################################################", fill=TRUE)
+    cat("#### lambda_alpha = ", max_prob_lambda * facs[ii],
+        " and lambda_beta = ", max_mean_lambda * facs[ii], "being tested.  ", fill=TRUE)
+    cat("###############################################################", fill=TRUE)
+    
+    res = flowmix_once(ylist = ylist,
+                       countslist = countslist,
+                       X = X,
+                       numclust = numclust,
+                       prob_lambda = max_prob_lambda * facs[ii],
+                       mean_lambda = max_mean_lambda * facs[ii],
+                       verbose = verbose,
+                       zero_stabilize = TRUE,
+                       ...)
+    
+    ## Check zero-ness
+    toler = 0
+    sum_nonzero_alpha = sum(res$alpha[,-1] > toler)
+    sum_nonzero_beta = sum(unlist(lapply(res$beta, function(cf){ sum(cf[-1,] > toler) })))
+    
+    
+    ## If there are *any* nonzero values, do one of the following
+    if(sum_nonzero_alpha + sum_nonzero_beta != 0){
+      
+      
+      ## If there are *any* nonzero values at the first iter, prompt a restart
+      ## with higher initial lambda values.
+      if(ii==1){
+        stop(paste0("Max lambdas: ", max_mean_lambda, " and ",
+                    max_prob_lambda,
+                    " were too small as maximum reg. values. Go up and try again!!"))
+        
+        ## If there are *any* nonzero values, return the immediately preceding
+        ## lambda values -- these were the smallest values we had found that gives
+        ## full sparsity.
       } else {
         ## Check one more time whether the model was actually zero, by fully running it;
         res = flowmix_once(ylist = ylist,
@@ -100,7 +221,7 @@ calc_max_lambda <- function(ylist, countslist = NULL, X, numclust,
         toler = 0
         sum_nonzero_alpha = sum(res$alpha[,-1] > toler)
         sum_nonzero_beta = sum(unlist(lapply(res$beta, function(cf){ sum(cf[-1,] > toler) })))
-
+        
         ## If there are *any* nonzero values, do one of the following
         if(sum_nonzero_alpha + sum_nonzero_beta != 0){
           return(list(beta = max_mean_lambda * facs[ii-1],
@@ -134,7 +255,7 @@ get_max_lambda <- function(destin, maxres_file = "maxres.Rdata",
                            max_prob_lambda,
                            max_mean_lambda,
                            ...){
-
+  
   if(file.exists(file.path(destin, maxres_file))){
     load(file.path(destin, maxres_file))
     cat("Maximum regularization values are loaded.", fill=TRUE)
